@@ -341,6 +341,7 @@ const ResumeAnalysis = ({ analysis }) => {
                 </p>
                 <div className="flex items-center space-x-2">
                   <div className="w-full bg-green-200 rounded-full h-2">
+                    
                     <div
                       className="bg-green-600 h-2 rounded-full"
                       style={{ width: "92%" }}
