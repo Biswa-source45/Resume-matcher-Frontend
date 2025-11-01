@@ -1,11 +1,11 @@
+// ...existing code...
 import { supabase } from "./supabaseClient";
 
 const API_BASE = import.meta.env.VITE_API_URL || "https://resume-matcher-backend-zpt3.onrender.com";
 
-async function getAuthToken() {
+async function getSupabaseAccessToken() {
   try {
-    const { data, error } = await supabase.auth.getSession();
-    if (error) return null;
+    const { data } = await supabase.auth.getSession();
     return data?.session?.access_token || null;
   } catch {
     return null;
@@ -13,20 +13,22 @@ async function getAuthToken() {
 }
 
 async function request(path, options = {}) {
-  const token = await getAuthToken();
+  const token = await getSupabaseAccessToken();
   const headers = { ...(options.headers || {}) };
 
-  // Don't set Content-Type for FormData uploads (browser will set the correct boundary)
+  // Don't set Content-Type for FormData uploads
   if (!(options.body instanceof FormData) && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
 
-  if (token) {
+  // Attach bearer token as fallback (cookie auth preferred)
+  if (token && !headers["Authorization"]) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
   const res = await fetch(`${API_BASE}${path}`, {
-    credentials: options.credentials ?? "same-origin", // use "include" if backend uses cookies
+    // include cookies so backend-set auth cookie will be sent on subsequent requests
+    credentials: options.credentials ?? "include",
     ...options,
     headers,
   });
@@ -34,12 +36,11 @@ async function request(path, options = {}) {
   // handle no-content
   if (res.status === 204) return null;
 
-  // parse response safely
-  const contentType = res.headers.get("content-type") || "";
-  const body = contentType.includes("application/json") ? await res.json() : await res.text();
+  const ct = res.headers.get("content-type") || "";
+  const body = ct.includes("application/json") ? await res.json() : await res.text();
 
   if (!res.ok) {
-    const err = new Error(body?.message || res.statusText || "API error");
+    const err = new Error(body?.detail || body?.message || (typeof body === "string" ? body : res.statusText) || "API error");
     err.status = res.status;
     err.body = body;
     throw err;
@@ -49,31 +50,49 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  // GET /summaries (protected)
+  // Called by authStore after Supabase sign-in to set backend cookie
+  async setCookie(sessionOrData) {
+    // sessionOrData may be { access_token, refresh_token, user } or supabase session object
+    const payload = {
+      access_token: sessionOrData?.access_token ?? sessionOrData?.session?.access_token,
+      refresh_token: sessionOrData?.refresh_token ?? sessionOrData?.session?.refresh_token,
+      user: sessionOrData?.user ?? sessionOrData?.session?.user,
+    };
+    return request("/set-cookie", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async logout() {
+    // clear backend cookie
+    return request("/logout", { method: "POST" });
+  },
+
+  // GET /summaries (protected - uses cookie or bearer)
   async getSummaries() {
     return request("/summaries", { method: "GET" });
   },
 
-  // POST /resumes/analyze (file upload)
+  // POST /analyze-resume (file upload) -> backend route is /analyze-resume
   async analyzeResume(file) {
     const form = new FormData();
-    form.append("resume", file);
-    return request("/resumes/analyze", {
+    form.append("file", file); // backend expects parameter named 'file' (UploadFile param)
+    return request("/analyze-resume", {
       method: "POST",
       body: form,
-      // DO NOT set Content-Type for FormData
+      // DO NOT set Content-Type when using FormData
     });
   },
 
-  // helper to fetch analysis by id
   async getAnalysisById(id) {
     return request(`/analysis/${encodeURIComponent(id)}`, { method: "GET" });
   },
 
-  // generic request pass-through
   raw(path, opts) {
     return request(path, opts);
   },
 };
 
 export default api;
+// ...existing code...
