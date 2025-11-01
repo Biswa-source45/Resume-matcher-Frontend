@@ -18,6 +18,7 @@ import {
   Lock,
   FolderKanban,
 } from "lucide-react";
+import { Link } from "react-router";
 
 export default function Documentation() {
   const [open, setOpen] = useState(null);
@@ -241,12 +242,11 @@ export default function Documentation() {
 
         {/* --- Back to App Button --- */}
         <div className="text-center mb-6">
-          <a
-            href="/"
+          <Link to={"/"}
             className="inline-flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-full text-sm font-medium hover:bg-blue-700 transition"
           >
             <KeyRound className="w-4 h-4" /> Back to App
-          </a>
+          </Link>
         </div>
       </div>
     </div>
