@@ -85,6 +85,17 @@ export const api = {
     });
   },
 
+  // NEW: send chat message to backend /chat
+  async sendChatMessage(message) {
+    if (!message || typeof message !== "string") {
+      throw new Error("Message must be a non-empty string");
+    }
+    return request("/chat", {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    });
+  },
+
   async getAnalysisById(id) {
     return request(`/analysis/${encodeURIComponent(id)}`, { method: "GET" });
   },
