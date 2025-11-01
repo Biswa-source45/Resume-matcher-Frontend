@@ -1,130 +1,79 @@
-const API_URL = import.meta.env.VITE_API_URL
+import { supabase } from "./supabaseClient";
 
-class ApiClient {
-  constructor() {
-    this.baseURL = API_URL;
-  }
+const API_BASE = import.meta.env.VITE_API_URL || "https://resume-matcher-backend-zpt3.onrender.com";
 
-  async request(endpoint, options = {}, isFormData = false) {
-    const url = `${this.baseURL}${endpoint}`;
-    const config = {
-      ...options,
-      credentials: "include", // ensures JWT cookies are sent
-      headers: {
-        ...(isFormData ? {} : { "Content-Type": "application/json" }),
-        ...options.headers,
-      },
-    };
-
-    try {
-      const response = await fetch(url, config);
-
-      // 🧠 Handle common errors cleanly
-      if (response.status === 401) {
-       
-        // console.warn(`[AUTH] Session expired. Redirecting to login.`);
-        return { error: "unauthorized" };
-      }
-
-      if (!response.ok) {
-        let error = {};
-        try {
-          error = await response.json();
-        } catch {
-          /* ignore invalid JSON */
-        }
-        const message =
-          error?.detail || error?.message || `Request failed: ${endpoint}`;
-        return { error: message };
-      }
-
-      if (response.status === 204) return {};
-      return await response.json();
-    } catch (err) {
-      console.warn(`[API] Network or unexpected error at ${endpoint}:`, err.message);
-      return { error: "Network error. Please try again." };
-    }
-  }
-
-  // ---------------------- AUTH ----------------------
-
-  async setCookie(session) {
-    if (!session?.access_token) {
-      console.warn("[Auth] Invalid Supabase session");
-      return { error: "Invalid session" };
-    }
-
-    const res = await this.request("/set-cookie", {
-      method: "POST",
-      body: JSON.stringify({
-        access_token: session.access_token,
-        refresh_token: session.refresh_token,
-        user: session.user,
-      }),
-    });
-
-    if (res?.error) console.warn("[Auth] setCookie failed:", res.error);
-    return res;
-  }
-
-  async logout() {
-    const res = await this.request("/logout", { method: "POST" });
-    if (res?.error && res.error !== "unauthorized") {
-      console.warn("[Auth] Logout warning:", res.error);
-    }
-    return res;
-  }
-
-  async getCurrentUser() {
-    const res = await this.request("/me");
-    if (res?.error === "unauthorized") return null;
-    return res;
-  }
-
-  // ---------------------- RESUME ----------------------
-
-  async analyzeResume(file) {
-    if (!file) return { error: "Please upload a PDF resume." };
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    return this.request("/analyze-resume", { method: "POST", body: formData }, true);
-  }
-
-  async getSummaries() {
-    const res = await this.request("/summaries");
-    return res?.error ? [] : res;
-  }
-
-  async deleteSummary(analysisId) {
-    if (!analysisId) return { error: "Analysis ID required" };
-    return this.request(`/summaries/${analysisId}`, { method: "DELETE" });
-  }
-
-  // ---------------------- CHAT ----------------------
-
-  async sendChatMessage(message) {
-    if (!message?.trim()) return { error: "Message cannot be empty" };
-
-    const res = await this.request("/chat", {
-      method: "POST",
-      body: JSON.stringify({ message }),
-    });
-
-    if (res?.error && res.error !== "unauthorized") {
-      console.warn("[Chat] Error:", res.error);
-    }
-
-    return res;
-  }
-
-  // ---------------------- HEALTH ----------------------
-
-  async healthCheck() {
-    const res = await this.request("/health");
-    return res?.error ? { status: "down", error: res.error } : res;
+async function getAuthToken() {
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) return null;
+    return data?.session?.access_token || null;
+  } catch {
+    return null;
   }
 }
 
-export const api = new ApiClient();
+async function request(path, options = {}) {
+  const token = await getAuthToken();
+  const headers = { ...(options.headers || {}) };
+
+  // Don't set Content-Type for FormData uploads (browser will set the correct boundary)
+  if (!(options.body instanceof FormData) && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    credentials: options.credentials ?? "same-origin", // use "include" if backend uses cookies
+    ...options,
+    headers,
+  });
+
+  // handle no-content
+  if (res.status === 204) return null;
+
+  // parse response safely
+  const contentType = res.headers.get("content-type") || "";
+  const body = contentType.includes("application/json") ? await res.json() : await res.text();
+
+  if (!res.ok) {
+    const err = new Error(body?.message || res.statusText || "API error");
+    err.status = res.status;
+    err.body = body;
+    throw err;
+  }
+
+  return body;
+}
+
+export const api = {
+  // GET /summaries (protected)
+  async getSummaries() {
+    return request("/summaries", { method: "GET" });
+  },
+
+  // POST /resumes/analyze (file upload)
+  async analyzeResume(file) {
+    const form = new FormData();
+    form.append("resume", file);
+    return request("/resumes/analyze", {
+      method: "POST",
+      body: form,
+      // DO NOT set Content-Type for FormData
+    });
+  },
+
+  // helper to fetch analysis by id
+  async getAnalysisById(id) {
+    return request(`/analysis/${encodeURIComponent(id)}`, { method: "GET" });
+  },
+
+  // generic request pass-through
+  raw(path, opts) {
+    return request(path, opts);
+  },
+};
+
+export default api;
