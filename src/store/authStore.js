@@ -1,7 +1,6 @@
-// src/store/authStore.js
-import { create } from "zustand";
+import create from "zustand";
 import { supabase } from "../utils/supabaseClient";
-import { api } from "../utils/api";
+import api from "../utils/api";
 
 const useAuthStore = create((set, get) => ({
   user: null,
@@ -22,32 +21,43 @@ const useAuthStore = create((set, get) => ({
       const { data, error } = await supabase.auth.getSession();
       if (error) throw error;
 
-      set({ session: data.session, user: data.session?.user ?? null, loading: false });
+      const session = data?.session || null;
+      const user = session?.user ?? null;
+      set({ session, user, loading: false });
 
-      supabase.auth.onAuthStateChange(async (event, session) => {
-        console.log("Auth Event:", event);
-
-        if (event === "SIGNED_IN" && session) {
-          set({ user: session.user, session });
-          try {
-            await api.setCookie(session);
-          } catch (e) {
-            console.error("Set cookie failed:", e);
-          }
+      // If a session exists (e.g. after OAuth redirect), tell backend to set cookie
+      if (session) {
+        try {
+          await api.setCookie(session);
+        } catch (e) {
+          console.warn("setCookie on init failed:", e);
         }
+      }
 
-        if (event === "SIGNED_OUT") {
-          set({ user: null, session: null });
-          try {
-            await api.logout();
-          } catch (e) {
-            console.error("Logout cleanup failed:", e);
+      // Subscribe to auth state changes
+      supabase.auth.onAuthStateChange(async (event, newSession) => {
+        try {
+          if (event === "SIGNED_IN" && newSession) {
+            set({ user: newSession.user, session: newSession });
+            try {
+              await api.setCookie(newSession);
+            } catch (e) {
+              console.warn("setCookie on SIGNED_IN failed:", e);
+            }
+          } else if (event === "SIGNED_OUT") {
+            set({ user: null, session: null });
+            try {
+              await api.logout();
+            } catch (e) {
+              console.warn("backend logout failed:", e);
+            }
           }
+        } catch (e) {
+          console.error("onAuthStateChange handler error:", e);
         }
       });
     } catch (err) {
-      console.error("Auth init error:", err);
-      set({ error: err.message, loading: false });
+      set({ error: err?.message ?? String(err), loading: false });
     }
   },
 
@@ -57,13 +67,21 @@ const useAuthStore = create((set, get) => ({
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
 
-      if (data.session) await api.setCookie(data.session);
+      const session = data?.session || null;
+      set({ session, user: session?.user ?? null, loading: false });
 
-      set({ user: data.user, session: data.session, loading: false });
-      return { success: true };
+      if (session) {
+        try {
+          await api.setCookie(session);
+        } catch (e) {
+          console.warn("setCookie after signIn failed:", e);
+        }
+      }
+
+      return session;
     } catch (err) {
-      set({ loading: false, error: err.message });
-      return { success: false, error: err.message };
+      set({ error: err?.message ?? String(err), loading: false });
+      throw err;
     }
   },
 
@@ -73,43 +91,54 @@ const useAuthStore = create((set, get) => ({
       const { data, error } = await supabase.auth.signUp({ email, password });
       if (error) throw error;
 
-      if (data.session) await api.setCookie(data.session);
+      const session = data?.session || null;
+      set({ session, user: session?.user ?? null, loading: false });
 
-      set({ user: data.user, session: data.session, loading: false });
-      return { success: true };
+      if (session) {
+        try {
+          await api.setCookie(session);
+        } catch (e) {
+          console.warn("setCookie after signUp failed:", e);
+        }
+      }
+
+      return data;
     } catch (err) {
-      set({ loading: false, error: err.message });
-      return { success: false, error: err.message };
+      set({ error: err?.message ?? String(err), loading: false });
+      throw err;
     }
   },
 
   signInWithGoogle: async () => {
     try {
       set({ loading: true, error: null });
-      const { error } = await supabase.auth.signInWithOAuth({
+      const redirectTo = `${window.location.origin}/dashboard`;
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: {
-          redirectTo: `${window.location.origin}/dashboard`,
-        },
+        options: { redirectTo },
       });
+      set({ loading: false });
       if (error) throw error;
-      return { success: true };
+      return data;
     } catch (err) {
-      set({ loading: false, error: err.message });
-      return { success: false, error: err.message };
+      set({ error: err?.message ?? String(err), loading: false });
+      throw err;
     }
   },
 
   signOut: async () => {
     try {
       set({ loading: true, error: null });
-      await api.logout();
       await supabase.auth.signOut();
+      try {
+        await api.logout();
+      } catch (e) {
+        console.warn("backend logout failed:", e);
+      }
       set({ user: null, session: null, loading: false });
-      return { success: true };
     } catch (err) {
-      set({ loading: false, error: err.message });
-      return { success: false, error: err.message };
+      set({ error: err?.message ?? String(err), loading: false });
+      throw err;
     }
   },
 
