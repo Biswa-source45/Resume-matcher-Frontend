@@ -89,7 +89,6 @@ export default function Documentation() {
     { method: "POST", path: "/auth/login", desc: "Authenticate user credentials securely." },
     { method: "POST", path: "/resume/analyze", desc: "Upload and analyze resume (processed in-memory, not stored)." },
     { method: "GET", path: "/analysis/history", desc: "Fetch user-specific embedding history and results." },
-    { method: "DELETE", path: "/analysis/:id", desc: "Delete an embedding or analysis record." },
   ];
 
   return (
