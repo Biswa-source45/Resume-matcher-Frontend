@@ -347,7 +347,7 @@ const Dashboard = () => {
                 </p>
                 <button
                   onClick={handleCloseInfo}
-                  className="mt-6 w-full rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+                  className="mt-6 w-full rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-black shadow-sm transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
                 >
                   Got it, thanks
                 </button>
