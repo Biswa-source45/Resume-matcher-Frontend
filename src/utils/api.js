@@ -1,7 +1,7 @@
-// ...existing code...
 import { supabase } from "./supabaseClient";
 
 const API_BASE = import.meta.env.VITE_API_URL || "https://resume-matcher-backend-zpt3.onrender.com";
+const REQUEST_TIMEOUT_MS = 30000; // 30 second timeout
 
 async function getSupabaseAccessToken() {
   try {
@@ -16,88 +16,86 @@ async function request(path, options = {}) {
   const token = await getSupabaseAccessToken();
   const headers = { ...(options.headers || {}) };
 
-  // Don't set Content-Type for FormData uploads
+  // Don't set Content-Type for FormData
   if (!(options.body instanceof FormData) && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
 
-  // Attach bearer token as fallback (cookie auth preferred)
+  // Always send Authorization as fallback for mobile (where cookies may be blocked)
   if (token && !headers["Authorization"]) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    credentials: options.credentials ?? "include",
-    ...options,
-    headers,
-  });
+  // Add timeout handling
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  // handle no-content
-  if (res.status === 204) return null;
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      credentials: "include", // try cookies first
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
 
-  const ct = res.headers.get("content-type") || "";
-  const body = ct.includes("application/json") ? await res.json() : await res.text();
+    if (res.status === 204) return null;
 
-  if (!res.ok) {
-    const err = new Error(body?.detail || body?.message || (typeof body === "string" ? body : res.statusText) || "API error");
-    err.status = res.status;
-    err.body = body;
+    const ct = res.headers.get("content-type") || "";
+    const body = ct.includes("application/json") ? await res.json() : await res.text();
+
+    if (!res.ok) {
+      const err = new Error(body?.detail || body?.message || (typeof body === "string" ? body : "API Error"));
+      err.status = res.status;
+      err.body = body;
+      throw err;
+    }
+
+    return body;
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
+    }
     throw err;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return body;
 }
 
 export const api = {
-  async setCookie(sessionOrData) {
-    const payload = {
-      access_token: sessionOrData?.access_token ?? sessionOrData?.session?.access_token,
-      refresh_token: sessionOrData?.refresh_token ?? sessionOrData?.session?.refresh_token,
-      user: sessionOrData?.user ?? sessionOrData?.session?.user,
-    };
+  async setCookie(sessionData) {
     return request("/set-cookie", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        session: sessionData?.session || sessionData,
+        access_token: sessionData?.access_token,
+        user: sessionData?.user,
+      }),
     });
-  },
-
-  async logout() {
-    // clear backend cookie
-    return request("/logout", { method: "POST" });
-  },
-
-  async getSummaries() {
-    return request("/summaries", { method: "GET" });
   },
 
   async analyzeResume(file) {
     const form = new FormData();
-    form.append("file", file); 
+    form.append("file", file);
     return request("/analyze-resume", {
-      method: "POST",
+      method: "POST", 
       body: form,
     });
   },
 
-  // NEW: send chat message to backend /chat
+  async getSummaries() {
+    return request("/summaries");
+  },
+
   async sendChatMessage(message) {
-    if (!message || typeof message !== "string") {
-      throw new Error("Message must be a non-empty string");
-    }
     return request("/chat", {
       method: "POST",
       body: JSON.stringify({ message }),
     });
   },
 
-  async getAnalysisById(id) {
-    return request(`/analysis/${encodeURIComponent(id)}`, { method: "GET" });
-  },
-
-  raw(path, opts) {
-    return request(path, opts);
+  async logout() {
+    return request("/logout", { method: "POST" });
   },
 };
 
 export default api;
-// ...existing code...
