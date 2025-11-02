@@ -1,13 +1,26 @@
 /* eslint-disable no-unused-vars */
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Upload, FileText, Brain, MessageCircle } from "lucide-react";
 import useAuthStore from "../store/authStore";
-import { api } from "../utils/api";
+import api from "../utils/api";
 import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorMessage from "../components/ErrorMessage";
 import ResumeAnalysis from "../components/ResumeAnalysis";
 import ChatBox from "../components/ChatBox";
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+const isPdfByBytes = async (file) => {
+  try {
+    const arr = await file.arrayBuffer();
+    const header = new Uint8Array(arr.slice(0, 4));
+    // PDF files start with "%PDF" -> bytes 0x25 0x50 0x44 0x46
+    return header[0] === 0x25 && header[1] === 0x50 && header[2] === 0x44 && header[3] === 0x46;
+  } catch {
+    return false;
+  }
+};
 
 const Dashboard = () => {
   const { user } = useAuthStore();
@@ -16,6 +29,7 @@ const Dashboard = () => {
   const [error, setError] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [showChat, setShowChat] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -28,7 +42,7 @@ const Dashboard = () => {
           setActiveTab("analysis");
         }
       } catch (err) {
-        if (isMounted) console.warn("No existing analysis found:", err.message);
+        if (isMounted) console.warn("No existing analysis found:", err?.message ?? err);
       }
     };
 
@@ -42,16 +56,30 @@ const Dashboard = () => {
   }, [user]);
 
   const handleFileUpload = async (event) => {
-    const file = event.target.files[0];
+    setError(null);
+    const file = event?.target?.files?.[0] ?? null;
     if (!file) return;
 
-    if (!file.type.includes("pdf")) {
-      setError("Please upload a PDF file");
+    // Basic client-side checks (some mobile browsers omit mime/type)
+    const isPdfType = (file.type || "").toLowerCase().includes("pdf");
+    const nameLooksPdf = typeof file.name === "string" && file.name.toLowerCase().endsWith(".pdf");
+    let looksLikePdf = isPdfType || nameLooksPdf;
+
+    if (!looksLikePdf) {
+      // fallback: read first bytes to verify PDF signature
+      const byBytes = await isPdfByBytes(file);
+      looksLikePdf = byBytes;
+    }
+
+    if (!looksLikePdf) {
+      setError("Please upload a valid PDF file.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > MAX_FILE_SIZE) {
       setError("File size must be less than 10MB");
+      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
@@ -60,12 +88,22 @@ const Dashboard = () => {
 
     try {
       const response = await api.analyzeResume(file);
-      setAnalysis(response.analysis);
+      const newAnalysis = response?.analysis ?? response;
+      setAnalysis(newAnalysis);
       setActiveTab("analysis");
+
+      // refresh summaries list in background (non-blocking)
+      try {
+        await api.getSummaries();
+      } catch (e) {
+        console.warn("Failed to refresh summaries:", e);
+      }
     } catch (err) {
-      setError(err.message || "Failed to analyze resume");
+      console.error("Upload/analysis error:", err);
+      setError(err?.message ?? "Failed to analyze resume. Try again.");
     } finally {
       setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -77,7 +115,6 @@ const Dashboard = () => {
     setShowChat(true);
   };
 
-  // Show loading while user is not ready
   if (!user) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -131,8 +168,9 @@ const Dashboard = () => {
                 {/* Upload Area */}
                 <div className="border-2 border-dashed border-neutral-300 rounded-xl p-8 sm:p-12 text-center hover:border-primary-400 transition-colors duration-200">
                   <input
+                    ref={fileInputRef}
                     type="file"
-                    accept=".pdf"
+                    accept=".pdf,application/pdf"
                     onChange={handleFileUpload}
                     className="hidden"
                     id="resume-upload"
@@ -150,9 +188,7 @@ const Dashboard = () => {
                         {uploading ? "Analyzing your resume..." : "Choose PDF file"}
                       </p>
                       <p className="text-sm text-neutral-600">
-                        {uploading
-                          ? "Our AI is analyzing your resume..."
-                          : "Drag and drop or click to upload"}
+                        {uploading ? "Our AI is analyzing your resume..." : "Tap to select or drag and drop"}
                       </p>
                     </div>
                     {uploading && <LoadingSpinner size="large" />}
@@ -256,21 +292,16 @@ const Dashboard = () => {
 
               {analysis && (
                 <div className="mt-6 pt-6 border-t border-neutral-200 text-center sm:text-left">
-                  <h4 className="font-medium text-neutral-900 mb-3">
-                    Recent Analysis
-                  </h4>
+                  <h4 className="font-medium text-neutral-900 mb-3">Recent Analysis</h4>
                   <div className="text-sm text-neutral-600 space-y-1">
                     <p>
-                      <span className="font-medium">File:</span>{" "}
-                      {analysis.resume_title}
+                      <span className="font-medium">File:</span> {analysis.resume_title}
                     </p>
                     <p>
-                      <span className="font-medium">Experience:</span>{" "}
-                      {analysis.experience_level}
+                      <span className="font-medium">Experience:</span> {analysis.experience_level}
                     </p>
                     <p>
-                      <span className="font-medium">Sentiment:</span>{" "}
-                      {analysis.sentiment}
+                      <span className="font-medium">Sentiment:</span> {analysis.sentiment}
                     </p>
                   </div>
                 </div>
@@ -281,11 +312,7 @@ const Dashboard = () => {
       </div>
 
       {/* Chat Modal */}
-      <AnimatePresence>
-        {showChat && (
-          <ChatBox analysis={analysis} onClose={() => setShowChat(false)} />
-        )}
-      </AnimatePresence>
+      <AnimatePresence>{showChat && <ChatBox analysis={analysis} onClose={() => setShowChat(false)} />}</AnimatePresence>
     </div>
   );
 };

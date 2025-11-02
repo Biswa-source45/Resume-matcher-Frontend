@@ -1,3 +1,4 @@
+// ...existing code...
 import { create } from "zustand";
 import { supabase } from "../utils/supabaseClient";
 import api from "../utils/api";
@@ -151,3 +152,4 @@ const useAuthStore = create((set, get) => ({
 }));
 
 export default useAuthStore;
+// ...existing code...
