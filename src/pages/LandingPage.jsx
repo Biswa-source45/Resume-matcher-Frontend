@@ -94,7 +94,7 @@ const NeuronBackground = () => {
 // 🌐 Landing Page
 const LandingPage = () => {
   return (
-    <div className="relative h-screen w-full overflow-hidden bg-white text-black flex flex-col items-center justify-start mt-5 md:mt-15 px-6">
+    <div className="relative h-screen w-full overflow-hidden bg-white text-black flex flex-col items-center justify-start mt-17 md:mt-34 px-6">
       <NeuronBackground />
 
       {/* ICONS ANIMATION */}
