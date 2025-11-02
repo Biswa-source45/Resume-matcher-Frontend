@@ -1,7 +1,13 @@
 /* eslint-disable no-unused-vars */
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, FileText, Brain, MessageCircle } from "lucide-react";
+import {
+  Upload,
+  FileText,
+  AlertCircle,
+  Brain,
+  MessageCircle,
+} from "lucide-react";
 import useAuthStore from "../store/authStore";
 import { api } from "../utils/api";
 import LoadingSpinner from "../components/LoadingSpinner";
@@ -10,6 +16,7 @@ import ResumeAnalysis from "../components/ResumeAnalysis";
 import ChatBox from "../components/ChatBox";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const INFO_POPUP_KEY = "resume_analyzer_info_shown";
 
 // Helper to validate PDF by checking file signature
 const isPdfByBytes = async (file) => {
@@ -17,7 +24,12 @@ const isPdfByBytes = async (file) => {
     const arr = await file.arrayBuffer();
     const header = new Uint8Array(arr.slice(0, 4));
     // PDF signature: %PDF
-    return header[0] === 0x25 && header[1] === 0x50 && header[2] === 0x44 && header[3] === 0x46;
+    return (
+      header[0] === 0x25 &&
+      header[1] === 0x50 &&
+      header[2] === 0x44 &&
+      header[3] === 0x46
+    );
   } catch (err) {
     console.warn("PDF validation failed:", err);
     return false;
@@ -32,6 +44,7 @@ const Dashboard = () => {
   const [analysis, setAnalysis] = useState(null);
   const [showChat, setShowChat] = useState(false);
   const fileInputRef = useRef(null);
+  const [showInfoPopup, setShowInfoPopup] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -50,8 +63,15 @@ const Dashboard = () => {
     };
 
     loadExistingAnalysis();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [user]);
+
+  useEffect(() => {
+    const hasShown = sessionStorage.getItem(INFO_POPUP_KEY);
+    setShowInfoPopup(!hasShown);
+  }, []);
 
   const handleFileUpload = async (event) => {
     setError(null);
@@ -110,6 +130,11 @@ const Dashboard = () => {
       return;
     }
     setShowChat(true);
+  };
+
+  const handleCloseInfo = () => {
+    sessionStorage.setItem(INFO_POPUP_KEY, "true");
+    setShowInfoPopup(false);
   };
 
   if (!user) {
@@ -182,10 +207,14 @@ const Dashboard = () => {
                     </div>
                     <div>
                       <p className="text-lg font-medium text-neutral-900 mb-1">
-                        {uploading ? "Analyzing your resume..." : "Choose PDF file"}
+                        {uploading
+                          ? "Analyzing your resume..."
+                          : "Choose PDF file"}
                       </p>
                       <p className="text-sm text-neutral-600">
-                        {uploading ? "Our AI is analyzing your resume..." : "Tap to select or drag and drop"}
+                        {uploading
+                          ? "Our AI is analyzing your resume..."
+                          : "Tap to select or drag and drop"}
                       </p>
                     </div>
                     {uploading && <LoadingSpinner size="large" />}
@@ -264,7 +293,9 @@ const Dashboard = () => {
 
               {analysis && (
                 <div className="mt-6 pt-6 border-t border-neutral-200 text-center sm:text-left">
-                  <h4 className="font-medium text-neutral-900 mb-3">Recent Analysis</h4>
+                  <h4 className="font-medium text-neutral-900 mb-3">
+                    Recent Analysis
+                  </h4>
                   <div className="text-sm text-neutral-600 space-y-1">
                     <p>
                       <span className="font-medium">File:</span>{" "}
@@ -284,11 +315,44 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
+
+        {showInfoPopup && (
+          <div className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-4 sm:w-96 bg-white rounded-xl shadow-lg border border-neutral-200 p-4 z-50">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h4 className="font-medium text-neutral-900 mb-1">
+                  Device Compatibility Notice
+                </h4>
+                <p className="text-sm text-neutral-600 mb-3">
+                  For the best experience, we recommend using a desktop or
+                  laptop computer. Some features like file upload and analysis
+                  may have limited functionality on mobile devices.
+                </p>
+                <button
+                  onClick={handleCloseInfo}
+                  className="text-sm font-medium text-neutral-900 hover:text-neutral-700"
+                >
+                  Got it, thanks
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Developer Signature */}
+        <div className="fixed bottom-4 right-4 text-sm text-neutral-500">
+          <p>
+            Developed by: <span className="font-medium">Biswabhusan Sahoo</span>
+          </p>
+        </div>
       </div>
 
       {/* Chat Modal */}
       <AnimatePresence>
-        {showChat && <ChatBox analysis={analysis} onClose={() => setShowChat(false)} />}
+        {showChat && (
+          <ChatBox analysis={analysis} onClose={() => setShowChat(false)} />
+        )}
       </AnimatePresence>
     </div>
   );
