@@ -44,7 +44,7 @@ const Dashboard = () => {
   const [analysis, setAnalysis] = useState(null);
   const [showChat, setShowChat] = useState(false);
   const fileInputRef = useRef(null);
-  const [showInfoPopup, setShowInfoPopup] = useState(true);
+  const [showInfoPopup, setShowInfoPopup] = useState(false); // Default to false
 
   useEffect(() => {
     let mounted = true;
@@ -69,8 +69,11 @@ const Dashboard = () => {
   }, [user]);
 
   useEffect(() => {
+    // Only check sessionStorage after the component has mounted
     const hasShown = sessionStorage.getItem(INFO_POPUP_KEY);
-    setShowInfoPopup(!hasShown);
+    if (!hasShown) {
+      setShowInfoPopup(true);
+    }
   }, []);
 
   const handleFileUpload = async (event) => {
@@ -315,38 +318,44 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
+      </div>
 
+      {/* Info Modal */}
+      <AnimatePresence>
         {showInfoPopup && (
-          <div className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-4 sm:w-96 bg-white rounded-xl shadow-lg border border-neutral-200 p-4 z-50">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <h4 className="font-medium text-neutral-900 mb-1">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1, transition: { delay: 0.1 } }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative w-full max-w-md overflow-hidden rounded-2xl bg-white p-6 shadow-xl"
+            >
+              <div className="flex flex-col items-center text-center">
+                <AlertCircle className="h-12 w-12 text-amber-500" />
+                <h3 className="mt-4 text-xl font-semibold text-neutral-900">
                   Device Compatibility Notice
-                </h4>
-                <p className="text-sm text-neutral-600 mb-3">
+                </h3>
+                <p className="mt-2 text-sm text-neutral-600">
                   For the best experience, we recommend using a desktop or
                   laptop computer. Some features like file upload and analysis
                   may have limited functionality on mobile devices.
                 </p>
                 <button
                   onClick={handleCloseInfo}
-                  className="text-sm font-medium text-neutral-900 hover:text-neutral-700"
+                  className="mt-6 w-full rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
                 >
                   Got it, thanks
                 </button>
               </div>
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
         )}
-
-        {/* Developer Signature */}
-        <div className="fixed bottom-4 right-4 text-sm text-neutral-500">
-          <p>
-            Developed by: <span className="font-medium">Biswabhusan Sahoo</span>
-          </p>
-        </div>
-      </div>
+      </AnimatePresence>
 
       {/* Chat Modal */}
       <AnimatePresence>
