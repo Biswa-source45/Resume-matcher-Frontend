@@ -2,7 +2,6 @@
 import { supabase } from "./supabaseClient";
 
 const API_BASE = import.meta.env.VITE_API_URL || "https://resume-matcher-backend-zpt3.onrender.com";
-const REQUEST_TIMEOUT_MS = 30_000;
 
 async function getSupabaseAccessToken() {
   try {
@@ -22,56 +21,39 @@ async function request(path, options = {}) {
     headers["Content-Type"] = "application/json";
   }
 
-  // Attach bearer token as fallback (helps on mobile when cookies are blocked)
+  // Attach bearer token as fallback (cookie auth preferred)
   if (token && !headers["Authorization"]) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const res = await fetch(`${API_BASE}${path}`, {
+    credentials: options.credentials ?? "include",
+    ...options,
+    headers,
+  });
 
-  try {
-    const res = await fetch(`${API_BASE}${path}`, {
-      credentials: options.credentials ?? "include", // include cookies, but also send Authorization
-      ...options,
-      headers,
-      signal: controller.signal,
-    });
+  // handle no-content
+  if (res.status === 204) return null;
 
-    if (res.status === 204) return null;
+  const ct = res.headers.get("content-type") || "";
+  const body = ct.includes("application/json") ? await res.json() : await res.text();
 
-    const ct = res.headers.get("content-type") || "";
-    const body = ct.includes("application/json") ? await res.json() : await res.text();
-
-    if (!res.ok) {
-      const detail = (body && body.detail) || (body && body.message) || body || res.statusText;
-      const err = new Error(detail || "API error");
-      err.status = res.status;
-      err.body = body;
-      throw err;
-    }
-
-    return body;
-  } catch (err) {
-    if (err.name === "AbortError") {
-      const e = new Error("Request timed out. Try again.");
-      e.status = 408;
-      throw e;
-    }
+  if (!res.ok) {
+    const err = new Error(body?.detail || body?.message || (typeof body === "string" ? body : res.statusText) || "API error");
+    err.status = res.status;
+    err.body = body;
     throw err;
-  } finally {
-    clearTimeout(timeout);
   }
+
+  return body;
 }
 
 export const api = {
-  // Called by authStore after Supabase sign-in to set backend cookie
   async setCookie(sessionOrData) {
     const payload = {
       access_token: sessionOrData?.access_token ?? sessionOrData?.session?.access_token,
       refresh_token: sessionOrData?.refresh_token ?? sessionOrData?.session?.refresh_token,
       user: sessionOrData?.user ?? sessionOrData?.session?.user,
-      session: sessionOrData?.session ?? null,
     };
     return request("/set-cookie", {
       method: "POST",
@@ -80,6 +62,7 @@ export const api = {
   },
 
   async logout() {
+    // clear backend cookie
     return request("/logout", { method: "POST" });
   },
 
@@ -89,15 +72,18 @@ export const api = {
 
   async analyzeResume(file) {
     const form = new FormData();
-    form.append("file", file); // backend expects 'file'
+    form.append("file", file); 
     return request("/analyze-resume", {
       method: "POST",
       body: form,
-      // DO NOT set Content-Type for FormData
     });
   },
 
+  // NEW: send chat message to backend /chat
   async sendChatMessage(message) {
+    if (!message || typeof message !== "string") {
+      throw new Error("Message must be a non-empty string");
+    }
     return request("/chat", {
       method: "POST",
       body: JSON.stringify({ message }),

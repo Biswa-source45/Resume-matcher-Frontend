@@ -10,9 +10,6 @@ const Navbar = () => {
   const { user, signOut } = useAuthStore();
   const [isOpen, setIsOpen] = useState(false);
 
-  console.log(user);
-  
-
   const handleLogout = async () => {
     const result = await signOut();
 
